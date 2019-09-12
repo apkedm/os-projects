@@ -8,7 +8,7 @@ asmlinkage long sys_cs3753_add(int a, int b, int * sum)
 	printk(KERN_ALERT "A = %d\n", a);
 	printk(KERN_ALERT "B = %d\n", b);
 	c = a + b;
+	printk(KERN_ALERT "Sum = %d\n", c);
 	copy_to_user(sum, &c, sizeof(int));
-	printk(KERN_ALERT "Sum = %d\n", *sum);
 	return 0;
 }
