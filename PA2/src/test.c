@@ -4,7 +4,9 @@
 #include <stdbool.h>
 
 #define DEVICE_NAME "/dev/simple_character_device"
-#define BUFF_SIZE 10
+#define BUFF_SIZE 16
+
+char menu_select(void);
 
 int main(){
 	/* Variable Declarations: */
@@ -17,16 +19,7 @@ int main(){
 	bool running = true;
 
 	while(running){
-		/* Print out the menu: */
-		printf("Menu:\n");
-		printf("'r' to read from device\n");
-		printf("'w' to write to device\n");
-		printf("'s' to seek from device\n");
-		printf("'e' to exit from device\n");
-		printf("Input: ");
-
-		/* Retrieve the user input */
-		scanf("%c", &input);
+		char input = menu_select();
 
 		switch(input){
 			case 'r':
@@ -45,7 +38,6 @@ int main(){
 				/* prints the buffer */
 				printf("Reading: %s\n", buffer); 
 				}	
-				/* while its not a new line, continue */
 				while(getchar() != '\n'); 
 				break;
 
@@ -60,8 +52,7 @@ int main(){
 				if(checkWrite == 0){
 					printf("Not enough buffer space to write\n");
 				}
-
-				while (getchar() != '\n'); /* while its not a new line, continue */
+				while(getchar() != '\n'); 
 				break;
 
 			case 's':
@@ -81,6 +72,7 @@ int main(){
 
 				/*llseek operation */
 				llseek(file, currPos, whence);
+				while(getchar() != '\n'); 
 				break;
 
 			case 'e':
@@ -91,10 +83,24 @@ int main(){
 
 			/* Handles invalid inputs*/
 			default:
-				printf("\n Oh, okay\n");
+				printf("\nPick something else.\n");
 				break;
 		}
 	}
 	close(file);
 	return 0;
+}
+
+char menu_select(void){
+	char input = 0;
+	/* Print menu */
+	printf("Menu:\n");
+	printf("'r' to read from device\n");
+	printf("'w' to write to device\n");
+	printf("'s' to seek from device\n");
+	printf("'e' to exit from device\n");
+	printf("Input: ");
+	/* Retrieve the user input */
+	scanf("%c", &input);
+	return input;
 }
