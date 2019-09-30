@@ -43,12 +43,12 @@ ssize_t simple_char_driver_write (struct file *pfile, const char __user *buffer,
 	/* copy_from_user function: destination is device_buffer and source is the userspace buffer *buffer */
 	if(length + *offset){
 		printk(KERN_ALERT "Error. Not enough buffer space.\n");
-		return -1
+		return -1;
 	}else{
 		printk("Writing to device.\n");
 		copy_from_user(device_buffer + *offset, buffer, length);
 		*offset += length;
-		printk("%d bytes written.\n");
+		printk("%d bytes written.\n", length);
 	}
 
 	return length;
@@ -76,7 +76,7 @@ int simple_char_driver_close (struct inode *pinode, struct file *pfile)
 loff_t simple_char_driver_seek (struct file *pfile, loff_t offset, int whence)
 {
 	/* Update open file position according to the values of offset and whence */
-	loff_t position;
+	loff_t position = 0;
 	switch(whence){
 		case 0:  //SEEK_SET
 			position = offset;
@@ -107,7 +107,7 @@ struct file_operations simple_char_driver_file_operations = {
 	.release = simple_char_driver_close,
 	.read = simple_char_driver_read,
 	.write = simple_char_driver_write,
-	.llseek = simple_char_driver_lseek
+	.llseek = simple_char_driver_seek
 	/* add the function pointers to point to the corresponding file operations. look at the file fs.h in the linux souce code*/
 };
 
@@ -115,7 +115,7 @@ static int simple_char_driver_init(void)
 {
 	/* print to the log file that the init function is called.*/
 	/* register the device */
-	register_chrdev(MAJOR_NUMBER, "simple_character_device", simple_char_driver_file_operations);
+	register_chrdev(MAJOR_NUMBER, "simple_character_device", &simple_char_driver_file_operations);
 	device_buffer = kmalloc(BUFFER_SIZE, GFP_KERNEL);
 	printk("simple_char_driver initialized.\n");
 	return 0;
@@ -127,7 +127,7 @@ static void simple_char_driver_exit(void)
 	/* unregister  the device using the register_chrdev() function. */
 	unregister_chrdev(MAJOR_NUMBER, "simple_character_device");
 	kfree(device_buffer);
-	printk("simple_char_driver exited.\n")
+	printk("simple_char_driver exited.\n");
 }
 
 /* add module_init and module_exit to point to the corresponding init and exit function*/
