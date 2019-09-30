@@ -39,7 +39,7 @@ int main(){
 
 				/* reads from the file, puts it to the buffer for x-length */
 				int checkRead = read(file, buffer, length); 
-				if(checkRead == 0){
+				if(checkRead != 0){
 					printf("Not even buffer space to read\n");
 				}
 				else{

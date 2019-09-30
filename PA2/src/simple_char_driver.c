@@ -41,7 +41,7 @@ ssize_t simple_char_driver_write (struct file *pfile, const char __user *buffer,
 	/* length is the length of the userspace buffer*/
 	/* current position of the opened file*/
 	/* copy_from_user function: destination is device_buffer and source is the userspace buffer *buffer */
-	if(length + *offset){
+	if(length + *offset > BUFFER_SIZE){
 		printk(KERN_ALERT "Error. Not enough buffer space.\n");
 		return -1;
 	}else{
