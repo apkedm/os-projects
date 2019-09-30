@@ -7,7 +7,7 @@ Email: rudyghill@gmail.com
 ## Description
 - ``simple_char_driver.c``: Device driver with read, write, seek, open, and close operations.
 
-- ``simple_character_device_test.c``: Test code using the file operations coded in the device driver. 
+- ``test.c``: Test code using the file operations coded in the device driver. 
 
 - ``Makefile``: Makefile for the device driver. Creates module object.
 
@@ -18,7 +18,7 @@ sudo make -C /lib/modules/$(uname -r)/build M=$PWD modules
 ```
 Build the test program with:
 ```
-gcc simple_character_device_test.c -o simple_character_device_test
+gcc test.c -o test
 ```
 
 ## Testing
@@ -43,6 +43,6 @@ Check using ``ls /dev`` to see if it was created.
 ### Run the Test code
 Run
 ```sh
-./simple_character_device_test
+./test
 ```
 Follow the prompts and enter e to exit the test.
