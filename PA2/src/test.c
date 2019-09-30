@@ -16,7 +16,6 @@ int main(){
 	int file = open(DEVICE_NAME, O_RDWR);
 	bool running = true;
 
-
 	while(running){
 		/* Print out the menu: */
 		printf("Menu:\n");
@@ -40,16 +39,12 @@ int main(){
 				/* reads from the file, puts it to the buffer for x-length */
 				int checkRead = read(file, buffer, length); 
 				if(checkRead != 0){
-					printf("Not even buffer space to read\n");
+					printf("Not enough buffer space to read\n");
 				}
 				else{
 				/* prints the buffer */
 				printf("Reading: %s\n", buffer); 
 				}	
-
-				
-				
-
 				/* while its not a new line, continue */
 				while(getchar() != '\n'); 
 				break;
@@ -96,7 +91,7 @@ int main(){
 
 			/* Handles invalid inputs*/
 			default:
-				printf("\n error: not a valid command\n");
+				printf("\n Oh, okay\n");
 				break;
 		}
 	}
