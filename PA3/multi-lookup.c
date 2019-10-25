@@ -1,227 +1,424 @@
 #include "multi-lookup.h"
 
-/***************************************************************************************************************************************************************
-REFERENCE:
-char * strcpy ( char * destination, const char * source );
+int main(int argc, char *argv[]) {
+		//Intitalize time structs
+    struct timeval start, end;
+		//Get a start time
+    gettimeofday(&start, NULL);
 
-char *fgets(char *str, int n, FILE *stream)
-
-long int strtol (const char* str, char** endptr, int base);
-
-int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_routine) (void *), void *arg);
-
-int pthread_join(pthread_t thread, void **retval);
-
-int pthread_mutex_init(pthread_mutex_t *restrict mutex, const pthread_mutexattr_t *restrict attr);
-
-int dnslookup(const char* hostname, char* firstIPstr, int maxSize); (from util.c)
-****************************************************************************************************************************************************************/
-
-/***************************************************************************************************************************************************************
-Function: requester
-Inputs: takes struct containing file descriptor and mutexes
-Outputs: N/A
-Goal:These threads service a set of name files, each of which contains a list of domain names.
-Each name that is read from each of the files is placed on a shared array.
-****************************************************************************************************************************************************************/
-
-char* arr[25];
-void *requester(void *inputStruct){
-
-  struct globStruct *requestS = inputStruct; //create a struct pointer that points to glbs, will give access to parameters
-
-  for (int i = 0; i < requestS->var.fileCount; i++) { //iterate from 0 to the amount of input files we have
-
-    if(!pthread_mutex_trylock(&requestS->mut.lock[i])) { //if successful, pthread_mutex_trylock returns 0, !0 = 1 -> thread now owns lock
-
-      char fileTobeServiced[20]; //create an array to store the files to be serviced
-
-      strcpy(fileTobeServiced,(requestS->array->fileArray + (i*20))); // copy the string
-
-      //http://man7.org/linux/man-pages/man2/gettid.2.html
-      pid_t gettid = syscall(SYS_gettid); //gets Thread ID for the service print
-
-      /* Write to service.txt, need to lock */
-      pthread_mutex_lock(&requestS->mut.serviceLock); //LOCK to write to service.txt
-      FILE *service = fopen(requestS->var.textServ, "a"); //open service.txt and append
-
-      /*Error Handler */
-      if (service == NULL) {
-        printf("Error opening file!\n");
-        exit(1);
-      }
-      fprintf(service, "thread: %d is servicing %s\n", gettid, fileTobeServiced);
-      fclose(service);
-      pthread_mutex_unlock(&requestS->mut.serviceLock); //Unlock
-
-
-      FILE* inputFile = fopen(fileTobeServiced, "r"); //read from file
-
-      /* Error Handler */
-      if(!inputFile) {
-        printf("Error: invalid Input File\n");
-      }
-
-      //char *fgets(char *str, int n, FILE *stream)
-      char domainName[20];
-      /* Getting the domain name from the file and storing it in the shared buffer */
-      while(fgets(domainName, sizeof(domainName), inputFile)) { //obtain domain
-        domainName[strlen(domainName)-1] = '\0';
-        strcpy(requestS->var.sharedBuffer[requestS->var.bufferIndex], domainName); //store into buffer
-        requestS->var.bufferIndex++; //increment the buffer index to get to the next spot
-      }
-      pthread_mutex_destroy(&requestS->mut.lock[i]);
+    //Ensure that the minimum number of arguments were specified
+    if (argc < 6) {
+        fprintf(stderr, "ERROR: invalid arguments.\nUsage: ./multi-lookup <# requester> <# resolver> <requester log> <resolver log> [ <data file> ...]\n");
+        exit(EXIT_FAILURE);
     }
-  }
-  return 0;
-}
 
-/***************************************************************************************************************************************************************
-Function: resolver
-Inputs: takes struct containing file descriptor and mutexes
-Outputs: N/A
-Goal:The resolver thread pool services the shared array by taking a name off the array and querying its IP address.
-After the name has been mapped to an IP address, the output is written to a line in the results.txt file
-If a resolver thread tries to read from the array but finds that it is empty, it should block until there is a
-new item in the array or all names in the input files have been serviced.
-*****************************************************************************************************************************************************************/
-void *resolver(void *inputStruct){
-  struct globStruct *requestS = inputStruct;
+    //Get the number of requesters and resolvers
+    int num_requesters = atoi(argv[1]);
+    int num_resolvers = atoi(argv[2]);
 
-  if(!pthread_mutex_trylock(&requestS->mut.sharedBufferLock)) { //if successful, pthread_mutex_trylock returns 0, !0 = 1 -> thread now owns lock
-    for(int i = 0; i < requestS->var.bufferIndex; i++) { //iterate through each line in the list
-
-      char domain[20]; //initalize an empty "string" for the domain name
-      char ip[20]; //initialize an empty "string" for the IP
-
-      strcpy(domain, requestS->var.sharedBuffer[i]); //fill the empty domain string with the domain name
-      printf("%s, ", domain); //print domain
-
-
-      int invHost = 0; //for invalid hostnames
-      if (dnslookup(domain, ip, sizeof(ip))) { //lookup IP address
-        fprintf(stderr, "INVALID HOSTNAME: %s\n", domain);
-        invHost  = 1; //invalid hostname
-        printf("\n");
-      }
-      else {
-        printf("%s\n", ip); //print IP
-      }
-
-      /* Write to results.txt, requires a lock */
-      pthread_mutex_lock(&requestS->mut.resultsLock); //LOCK results lock
-      FILE *outStream = fopen(requestS->var.textRes, "a"); //open results.txt to append IP
-      if (outStream == NULL) {
-        printf("Error: invalid output file!\n");
-        exit(1);
-      }
-      /* add some text */
-      if (!invHost) { //invHost checks for invalid hostnames
-        fprintf(outStream, "%s, %s\n", domain, ip);
-      }
-      else {
-        fprintf(outStream, "%s,\n", domain);
-      }
-      fclose(outStream);
-      pthread_mutex_unlock(&requestS->mut.resultsLock);//Unlock
-
+    //Check the recieved thread numbers
+    if (num_requesters <= 0) {
+        fprintf(stderr, "ERROR: There must be at least one requester thread.\n");
+        exit(EXIT_FAILURE);
     }
-    pthread_mutex_destroy(&requestS->mut.sharedBufferLock); //destroy mutex lock
-  }
+    if (num_resolvers <= 0) {
+        fprintf(stderr, "ERROR: There must be at least one resolver thread.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    //Get the requester and resolver log files
+    char *requester_log_file = argv[3];
+    char *resolver_log_file = argv[4];
+
+    //Check the existence of the requester and resolver log files
+    if (access(requester_log_file, F_OK | W_OK) == -1) {
+        fprintf(stderr, "ERROR: The requester log file does not exist.\n");
+        exit(EXIT_FAILURE);
+    }
+    if (access(resolver_log_file, F_OK | W_OK) == -1) {
+        fprintf(stderr, "ERROR: The resolver log file does not exist.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    //Get the number of actually valid input files, and a list of those valid input paths
+    int num_input_files;
+    char **list_input_files = get_valid_input_files(argv + 5, argc - 5, &num_input_files);
+
+    //Create the list of files
+    InputFileList *files;
+    files = malloc(sizeof(*files) + sizeof(InputFile) * num_input_files);
+
+    files->file_list_lock = (pthread_mutex_t) PTHREAD_MUTEX_INITIALIZER;
+    files->total_files = num_input_files;
+    files->current_file = 0;
+    files->num_processed = 0;
+
+    //Add each input file to the list of files
+    int i;
+    for(i=0; i<num_input_files; i++){
+
+        InputFile file;
+        file.file_lock = (pthread_mutex_t) PTHREAD_MUTEX_INITIALIZER;
+        file.finished = 0;
+        file.filename = list_input_files[i];
+        file.fd = fopen(file.filename, "r");
+        files->files[i] = file;
+    }
+
+    //Create the shared buffer
+    SharedBuffer *shared_buffer;
+    shared_buffer = malloc(sizeof(*shared_buffer) + sizeof(char*) * SHARED_BUFFER_SIZE);
+
+    shared_buffer->total_size = SHARED_BUFFER_SIZE;
+    shared_buffer->current_position = 0;
+    shared_buffer->buffer_lock = (pthread_mutex_t) PTHREAD_MUTEX_INITIALIZER;
+    shared_buffer->buffer_full = (pthread_cond_t) PTHREAD_COND_INITIALIZER;
+    shared_buffer->buffer_empty = (pthread_cond_t) PTHREAD_COND_INITIALIZER;
+    shared_buffer->full = 0;
+    shared_buffer->empty = 1;
+    shared_buffer->requesters_done = 0;
+
+    OutputFile serviced_file;
+    serviced_file.filename = requester_log_file;
+    serviced_file.fd = fopen(requester_log_file, "w");
+    serviced_file.file_lock = (pthread_mutex_t) PTHREAD_MUTEX_INITIALIZER;
+
+    struct RequesterThreadArgs requester_args;
+    requester_args.files = files;
+    requester_args.shared_buffer = shared_buffer;
+    requester_args.serviced_file = serviced_file;
+
+    //Create an array to store the thread IDs of the requester threads
+    pthread_t *tids_requester = malloc(sizeof(pthread_t) * num_requesters);
+
+    //Start all of the requester threads
+    for (i = 0; i < num_requesters; i++) {
+        pthread_create(&tids_requester[i], NULL, requester_process_helper, (void *)&requester_args);
+    }
+
+    OutputFile results_file;
+    results_file.file_lock = (pthread_mutex_t) PTHREAD_MUTEX_INITIALIZER;
+    results_file.filename = resolver_log_file;
+    results_file.fd = fopen(resolver_log_file, "w");
+
+    struct ResolverThreadArgs resolver_args;
+    resolver_args.shared_buffer = shared_buffer;
+    resolver_args.results_file = results_file;
+
+    //Create an array to store the thread IDs of the resolver threads
+    pthread_t *tids_resolver = malloc(sizeof(pthread_t) * num_resolvers);
+
+    //Start all of the resolver threads
+    for (i = 0; i < num_resolvers; i++) {
+
+        pthread_create(&tids_resolver[i], NULL, resolver_process, (void *)&resolver_args);
+    }
+
+    //Join all of the requester threads
+    for (i = 0; i < num_requesters; i++) {
+
+        pthread_join(tids_requester[i], 0);
+    }
+
+    pthread_mutex_lock(&shared_buffer->buffer_lock);
+    shared_buffer->requesters_done = 1;
+    pthread_cond_broadcast(&shared_buffer->buffer_empty);
+    pthread_mutex_unlock(&shared_buffer->buffer_lock);
+
+    //Join all of the resolver threads
+    for (i = 0; i < num_resolvers; i++) {
+
+        pthread_join(tids_resolver[i], 0);
+    }
+
+    //Close all of the open input files
+    for(i = 0; i <  num_input_files; i++) {
+
+        fclose(files->files[i].fd);
+    }
+
+    fclose(results_file.fd);
+    fclose(serviced_file.fd);
+
+    //Free all of the dynamically allocated arrays
+    free(list_input_files);
+    free(files);
+    free(shared_buffer);
+    free(tids_requester);
+    free(tids_resolver);
+
+		//Get end time
+    gettimeofday(&end, NULL);
+		//Present ellapsed time to user
+    printf ("Total program runtime: %f seconds\n", (double) (end.tv_usec - start.tv_usec) / 1000000 + (double) (end.tv_sec - start.tv_sec));
+
+    exit(EXIT_SUCCESS);
 }
 
-/****************************************************************************************************************************************************************
-Function: getTimeOfDay
-Inputs: N/A
-Outputs: milliseconds (long long)
-Goal:These threads service a set of name files, each of which contains a list of domain names.
-Each name that is read from each of the files is placed on a shared array.
-********************************************************************************************************************************************************************/
-long long getTimeOfDay(){
+void *requester_process_helper(void* input_files) {
 
-  // SOURCE: https://linux.die.net/man/2/gettimeofday
-  struct timeval evaltime;
-  /* gets the current time */
-  gettimeofday(&evaltime, NULL); /* system call */
-  /* calculate the miliseconds */
-  long long milliseconds = evaltime.tv_sec*1000LL + evaltime.tv_usec/1000;
-  /* return the milliseconds */
-  return milliseconds;
+    struct RequesterThreadArgs *requester_args = (struct RequesterThreadArgs *) input_files;
+
+    int* count_ptr;
+    int count = 0;
+    count_ptr = &count;
+
+    requester_process(input_files, count_ptr);
+
+    int length = snprintf( NULL, 0, "%i", count);
+    char* count_str = malloc( sizeof(char) * (length + 1));
+    snprintf(count_str, sizeof(char) * (length + 1), "%i", count);
+
+    length = snprintf( NULL, 0, "%ld", syscall(SYS_gettid));
+    char* tid_str = malloc( sizeof(char) * (length + 1));
+    snprintf(tid_str, sizeof(char) * (length + 1), "%ld", syscall(SYS_gettid));
+
+    char* out = malloc(sizeof(char) * (26 + strlen(count_str) + strlen(tid_str)));
+    strcpy(out, "Thread ");
+    strcat(out, tid_str);
+    strcat(out, " serviced ");
+    strcat(out, count_str);
+    strcat(out, " files.\n");
+
+    free(count_str);
+    free(tid_str);
+
+    pthread_mutex_lock(&requester_args->serviced_file.file_lock);
+    fputs_unlocked(out, requester_args->serviced_file.fd);
+    pthread_mutex_unlock(&requester_args->serviced_file.file_lock);
+
+    free(out);
+
+    return NULL;
 }
-/******************************************************************************************************************************************************************/
-int main (int argc, char *argv[]) {
-  /* Format: ./multi-lookup <# requester> <# resolver> <requester log> <resolver log> [<data files>......]     */
 
-  for(int i; i<25; i++){
-      char* arr[i] = char* malloc(25*sizeof(char));
-  }
+void *requester_process(void *input_files, int* num_processed) {
 
-  long long startTime = getTimeOfDay(); //get the start time to later compute how long it took
+    struct RequesterThreadArgs *requester_args = (struct RequesterThreadArgs *) input_files;
 
-  struct globStruct gbls; //instantiate a globStruct
+    InputFileList *args = requester_args->files;
+    SharedBuffer *shared_buffer = requester_args->shared_buffer;
 
-  gbls.var.bufferIndex = 0; //set the buffer index to zero
+    pthread_mutex_lock(&args->file_list_lock);
 
-  /* copy the name of the serviced file from command line argument */
-  strcpy(gbls.var.textServ, argv[4]);
+    if (args->num_processed == args->total_files) {
 
-  /* copy the name of the results file from command line argument */
-  strcpy(gbls.var.textRes, argv[3]);
+        pthread_mutex_unlock(&args->file_list_lock);
 
+        return NULL;
+    }
+    else {
 
-  /* Requester Threads   */
-  int numReqThreads = strtol(argv[1], NULL, 10); //number of request threads
-  pthread_t requesterThreads[numReqThreads];
-  struct threadData threadDataArray[numReqThreads];
-  gbls.array = threadDataArray;
+        //Find an unfinished file
+        while (args->files[args->current_file].finished) {
 
-  /* Resolver threads */
-  int numResThreads = strtol(argv[2],NULL,10); //store in the number of resolver threads from the command line argument
-  pthread_t resolverThreads[numResThreads];
-  char inputFileArray[20][20];
-  int fileCount = argc-5; //subtract the total argument count by 5 to store the amount of input files we have
-  gbls.var.fileCount = fileCount; //store in struct
-  for(int i = 0; i < fileCount; i++){
-    strcpy(inputFileArray[i], argv[i+5]);
-  }
+            if (args->current_file == args->total_files - 1) {
 
-  /* Initialize mutex locks w/ DEFAULT attributes*/
-  pthread_mutex_init(&gbls.mut.resultsLock,NULL);
-  pthread_mutex_init(&gbls.mut.serviceLock,NULL);
-  pthread_mutex_init(&gbls.mut.sharedBufferLock,NULL);
-  for (int i = 0; i < 10; i++){
-    pthread_mutex_init(&gbls.mut.lock[i],NULL);
-  }
+                args->current_file = 0;
+            }
+            else {
 
-  //populate thread data and global files to service
-  for (int i = 0; i <= numReqThreads; i++){
-    threadDataArray[i].fileArray = &inputFileArray;
-  }
+                args->current_file++;
+            }
+        }
 
-  //create requester threads
-  for (int i = 0; i < numReqThreads; i++){
-    //int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_routine) (void *), void *arg);
-    pthread_create(&requesterThreads[i], NULL, requester, &gbls);
-  }
-  //join requester threads
-  for (int i = 0; i < numReqThreads; i++){
-    //int pthread_join(pthread_t thread, void **retval);
-    pthread_join(requesterThreads[i],NULL);
-  }
+        InputFile *file_to_process = &args->files[args->current_file];
+        (*num_processed)++;
 
-  //create resolver threads
-  for (int i = 0; i < numResThreads; i++){
-    pthread_create(&resolverThreads[i], NULL, resolver, &gbls);
-  }
-  //join resolver threads
-  for (int i =0; i< numResThreads; i++){
-    pthread_join(resolverThreads[i],NULL);
-  }
+        if (args->current_file == args->total_files - 1) {
 
+            args->current_file = 0;
+        }
+        else {
 
-  /*  Get the time when the process finished  */
-  long long endTime = getTimeOfDay();
+            args->current_file++;
+        }
 
+        pthread_mutex_unlock(&args->file_list_lock);
 
-  printf("\nTime elapsed (in seconds): %d\n", (endTime-startTime)/1000); //print total time elasped
+        //printf("Thread ID %ld is going to use file %s\n", syscall(SYS_gettid), file_to_process->filename);
+
+        while (1) {
+
+            pthread_mutex_lock(&file_to_process->file_lock);
+
+            char *hostname = (char *) malloc((MAX_NAME_LENGTH) * sizeof(char));
+
+            if (fgets_unlocked(hostname, MAX_NAME_LENGTH, file_to_process->fd) != NULL) {
+
+                pthread_mutex_unlock(&file_to_process->file_lock);
+
+                if (strlen(hostname) <= MAX_NAME_LENGTH - 1 && hostname[strlen(hostname) - 1] == '\n') {
+
+                    hostname[strlen(hostname) - 1] = '\0';
+                }
+
+                //printf("Thread ID %ld read line %s from file %s\n", syscall(SYS_gettid), hostname, file_to_process->filename);
+
+                pthread_mutex_lock(&shared_buffer->buffer_lock);
+
+                while (shared_buffer->full) {
+
+                    pthread_cond_wait(&shared_buffer->buffer_full, &shared_buffer->buffer_lock);
+                }
+
+                //printf("I am requester thread ID %ld and I am going to put %s into index %i\n", syscall(SYS_gettid), hostname, shared_buffer->current_position);
+
+                shared_buffer->shared_array[shared_buffer->current_position] = hostname;
+
+                if (shared_buffer->current_position == shared_buffer->total_size - 1) {
+
+                    shared_buffer->full = 1;
+                }
+
+                shared_buffer->current_position++;
+
+                if (shared_buffer->current_position - 1 == 0) {
+
+                    shared_buffer->empty = 0;
+                    pthread_cond_broadcast(&shared_buffer->buffer_empty);
+                }
+
+                pthread_mutex_unlock(&shared_buffer->buffer_lock);
+            }
+            else {
+
+                free(hostname);
+
+               // printf("Thread ID %ld finished working on file %s\n", syscall(SYS_gettid), file_to_process->filename);
+
+                if (!file_to_process->finished) {
+
+                    file_to_process->finished = 1;
+
+                    pthread_mutex_unlock(&file_to_process->file_lock);
+
+                    pthread_mutex_lock(&args->file_list_lock);
+
+                    args->num_processed++;
+
+                    pthread_mutex_unlock(&args->file_list_lock);
+
+                    requester_process(input_files, num_processed++);
+                }
+                else {
+
+                    pthread_mutex_unlock(&file_to_process->file_lock);
+                }
+
+                break;
+            }
+        }
+    }
+
+    return NULL;
+}
+
+void *resolver_process(void *args) {
+
+    struct ResolverThreadArgs *resolver_args = (struct ResolverThreadArgs *) args;
+
+    SharedBuffer *shared_buffer = resolver_args->shared_buffer;
+
+    while (1) {
+        pthread_mutex_lock(&shared_buffer->buffer_lock);
+
+        while (shared_buffer->empty && !shared_buffer->requesters_done) {
+
+            pthread_cond_wait(&shared_buffer->buffer_empty, &shared_buffer->buffer_lock);
+        }
+
+        if (shared_buffer->requesters_done && shared_buffer->empty) {
+
+            pthread_mutex_unlock(&shared_buffer->buffer_lock);
+
+            break;
+        }
+
+        char *hostname = shared_buffer->shared_array[shared_buffer->current_position - 1];
+        shared_buffer->shared_array[shared_buffer->current_position - 1] = NULL;
+
+        if (shared_buffer->current_position == 1) {
+
+            shared_buffer->empty = 1;
+        }
+
+        shared_buffer->current_position--;
+
+        if (shared_buffer->current_position == SHARED_BUFFER_SIZE - 1) {
+
+            shared_buffer->full = 0;
+            pthread_cond_broadcast(&shared_buffer->buffer_full);
+        }
+
+        pthread_mutex_unlock(&shared_buffer->buffer_lock);
+
+        //printf("I am resolver thread %lu and I am processing hostname %s \n", syscall(SYS_gettid), hostname);
+
+        char ip[16];
+
+        if (dnslookup(hostname, ip, 15) == UTIL_SUCCESS) {
+
+            char* out = malloc(sizeof(char) * (strlen(hostname) + strlen(ip) + 3));
+            strcpy(out, hostname);
+            strcat(out, ",");
+            strcat(out, ip);
+            strcat(out, "\n");
+
+            pthread_mutex_lock(&resolver_args->results_file.file_lock);
+            fputs_unlocked(out, resolver_args->results_file.fd);
+            pthread_mutex_unlock(&resolver_args->results_file.file_lock);
+
+            //printf("Output file line: %s", out);
+
+            free(out);
+
+        }
+        else {
+            char* out = malloc(sizeof(char) * (strlen(hostname) + 3));
+            strcpy(out, hostname);
+            strcat(out, ",");
+            strcat(out, "\n");
+
+            pthread_mutex_lock(&resolver_args->results_file.file_lock);
+            fputs_unlocked(out, resolver_args->results_file.fd);
+            pthread_mutex_unlock(&resolver_args->results_file.file_lock);
+
+            fprintf(stderr, "ERROR: Invalid hostname \"%s\".\n", hostname);
+
+            free(out);
+        }
+
+        free(hostname);
+    }
+
+    return NULL;
+}
+
+char** get_valid_input_files(char *input_files[], int potential_num, int *total_num_output) {
+
+    int total = 0;
+    int i;
+
+    for (i = 0; i < potential_num; i++) {
+        if (access(input_files[i], F_OK | R_OK) == -1) {
+            fprintf(stderr, "ERROR: Input file \"%s\" does not exist.\n", input_files[i]);
+        }
+        else {
+            total++;
+        }
+    }
+
+    *total_num_output = total;
+
+    char **valid_files = malloc(sizeof(char *) * total);
+    int valid_files_index = 0;
+
+    for (i = 0; i < potential_num; i++) {
+        if (access(input_files[i], F_OK | R_OK) != -1) {
+            valid_files[valid_files_index++] = input_files[i];
+        }
+    }
+
+    return valid_files;
 }
