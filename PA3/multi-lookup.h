@@ -1,16 +1,16 @@
 #ifndef MULTI_LOOKUP_H
 #define MULTI_LOOKUP_H
 
+#include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <errno.h>
-#include <limits.h>
-#include <unistd.h>
-#include <pthread.h>
+#include <string.h>
 #include <sys/syscall.h>
 #include <sys/time.h>
-#include <string.h>
-#include <fcntl.h>
+#include <unistd.h>
 
 #include "util.h"
 
@@ -32,14 +32,6 @@ typedef struct InputFile {
 
 } InputFile;
 
-typedef struct OutputFile {
-
-    pthread_mutex_t file_lock;
-    FILE *fd;
-    char *filename;
-
-} OutputFile;
-
 typedef struct InputFileList {
 
     pthread_mutex_t file_list_lock;
@@ -49,6 +41,14 @@ typedef struct InputFileList {
     InputFile files[];
 
 } InputFileList;
+
+typedef struct OutputFile {
+
+    pthread_mutex_t file_lock;
+    FILE *fd;
+    char *filename;
+
+} OutputFile;
 
 typedef struct SharedBuffer {
 
