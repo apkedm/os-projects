@@ -92,7 +92,7 @@ int main(int argc, char *argv[]) {
 
 	//Start all of the requester threads
 	for (i = 0; i < num_requesters; i++) {
-		pthread_create(&tids_requester[i], NULL, requester_process_helper, (void *)&requester_args);
+		pthread_create(&tids_requester[i], NULL, requester_process, (void *)&requester_args);
 	}
 
 	//Create results output file
@@ -153,21 +153,17 @@ int main(int argc, char *argv[]) {
 	//Get end time
 	gettimeofday(&end, NULL);
 	//Present ellapsed time to user
-	printf ("Total program runtime: %f seconds\n", (double) (end.tv_usec - start.tv_usec) / 1000000 + (double) (end.tv_sec - start.tv_sec));
+	printf ("Total run time: %f seconds\n", (double) (end.tv_usec - start.tv_usec) / 1000000 + (double) (end.tv_sec - start.tv_sec));
 
 	exit(EXIT_SUCCESS);
 }
 
-void *requester_process_helper(void* input_files) {
+void *requester_process(void* input_files) {
 
 	struct RequesterThreadArgs *requester_args = (struct RequesterThreadArgs *) input_files;
-
-	//FIX ME
-	//int* count_ptr;
 	int count = 0;
-	//count_ptr = &count;
 
-	requester_process(input_files, &count);
+	requester_helper(input_files, &count);
 
 	int length = snprintf( NULL, 0, "%i", count);
 	char* count_str = malloc( sizeof(char) * (length + 1));
@@ -194,10 +190,10 @@ void *requester_process_helper(void* input_files) {
 
 	free(out);
 
-	return NULL;
+	return 0;
 }
 
-void *requester_process(void *input_files, int* num_processed) {
+void *requester_helper(void *input_files, int* num_processed) {
 
 	struct RequesterThreadArgs *requester_args = (struct RequesterThreadArgs *) input_files;
 
@@ -205,7 +201,7 @@ void *requester_process(void *input_files, int* num_processed) {
 	SharedBuffer *shared_buffer = requester_args->shared_buffer;
 
 	pthread_mutex_lock(&args->file_list_lock);
-	//If all the files are processed then you are done
+	//If all the files are processed then exit
 	if (args->num_processed == args->total_files) {
 
 		pthread_mutex_unlock(&args->file_list_lock);
@@ -298,7 +294,7 @@ void *requester_process(void *input_files, int* num_processed) {
 
 					pthread_mutex_unlock(&args->file_list_lock);
 
-					requester_process(input_files, num_processed++);
+					requester_helper(input_files, num_processed++);
 				}
 				else {
 
@@ -310,7 +306,7 @@ void *requester_process(void *input_files, int* num_processed) {
 		}
 	}
 
-	return NULL;
+	return 0;
 }
 
 void *resolver_process(void *args) {
@@ -385,7 +381,7 @@ void *resolver_process(void *args) {
 		free(hostname);
 	}
 
-	return NULL;
+	return 0;
 }
 
 char** get_valid_input_files(char *input_files[], int potential_num, int *total_num_output) {

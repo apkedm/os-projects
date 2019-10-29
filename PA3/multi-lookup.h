@@ -19,8 +19,8 @@
 
 int main(int argc, char *argv[]);
 char** get_valid_input_files(char *input_files[], int potential_num, int *total_num_output);
-void *requester_process_helper(void* input_files);
-void *requester_process(void *input_files, int *num_processed);
+void *requester_process(void* input_files);
+void *requester_helper(void *input_files, int *num_processed);
 void *resolver_process(void *args);
 
 typedef struct InputFile {
