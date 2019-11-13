@@ -13,39 +13,74 @@
  *      implmentation.
  */
 
-#include <stdio.h> 
+#include <stdio.h>
 #include <stdlib.h>
 
 #include "simulator.h"
 
-void pageit(Pentry q[MAXPROCESSES]) { 
-    
-    /* This file contains the stub for an LRU pager */
-    /* You may need to add/remove/modify any part of this file */
+void pageit(Pentry q[MAXPROCESSES]) {
 
-    /* Static vars */
-    static int initialized = 0;
-    static int tick = 1; // artificial time
-    static int timestamps[MAXPROCESSES][MAXPROCPAGES];
+	/* This file contains the stub for an LRU pager */
+	/* You may need to add/remove/modify any part of this file */
 
-    /* Local vars */
-    int proctmp;
-    int pagetmp;
+	/* Static vars */
+	static int initialized = 0;
+	static int tick = 1; // artificial time
+	static int timestamps[MAXPROCESSES][MAXPROCPAGES];
 
-    /* initialize static vars on first run */
-    if(!initialized){
-	for(proctmp=0; proctmp < MAXPROCESSES; proctmp++){
-	    for(pagetmp=0; pagetmp < MAXPROCPAGES; pagetmp++){
-		timestamps[proctmp][pagetmp] = 0; 
-	    }
+	/* Local vars */
+	int proctmp;
+	int pagetmp;
+
+	/* initialize static vars on first run */
+	if(!initialized){
+		for(proctmp=0; proctmp < MAXPROCESSES; proctmp++){
+			for(pagetmp=0; pagetmp < MAXPROCPAGES; pagetmp++){
+				timestamps[proctmp][pagetmp] = 0;
+			}
+		}
+		initialized = 1;
 	}
-	initialized = 1;
-    }
-    
-    /* TODO: Implement LRU Paging */
-    fprintf(stderr, "pager-lru not yet implemented. Exiting...\n");
-    exit(EXIT_FAILURE);
 
-    /* advance time for next pageit iteration */
-    tick++;
-} 
+	/* TODO: Implement LRU Paging */
+
+	/* Local vars */
+	int proc;
+	int pc;
+	int page;
+	int cur_page;
+	int lru_page;
+
+	/* Loop through each process */
+	for(proc=0; proc<MAXPROCESSES; proc++) {
+		/* Check if process is active */
+		if(q[proc].active) {
+			pc = q[proc].pc; // program counter for process
+			page = pc/PAGESIZE;	// page the program counter needs
+			/* Check if page is not swapped in */
+			if(!q[proc].pages[page]) { // pages[i] is 1 if swapped in
+				/* If so try to swap it in */
+				if(!pagein(proc, page)) { //1 if pagein started, 0 if it can't start
+
+					/* If you cannot swapon in a page, choose the lru to evict */
+					int lru_time = tick; // placeholder
+					for(cur_page=0; cur_page < q[proc].npages; cur_page++) {
+						/* If the page is swapped in and it is older than the curent lru page*/
+						if(q[proc].pages[cur_page] && timestamps[proc][cur_page] < lru_time) {
+							/* Set the new lru time and the new lru page */
+							lru_time = timestamps[proc][cur_page];
+							lru_page = cur_page;
+						}
+					}
+					pageout(proc, lru_page);
+					break;
+
+				}
+			}
+			timestamps[proc][page] = tick;
+		}
+	}
+
+	/* advance time for next pageit iteration */
+	tick++;
+}
