@@ -73,8 +73,6 @@ void pageit(Pentry q[MAXPROCESSES]) {
 						}
 					}
 					pageout(proc, lru_page);
-					break;
-
 				}
 			}
 			timestamps[proc][page] = tick;
